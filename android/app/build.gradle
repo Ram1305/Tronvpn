@@ -34,10 +34,10 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.yencodetech.vpn"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
-    lintOptions {
+    lint {
         disable 'InvalidPackage'
     }
 

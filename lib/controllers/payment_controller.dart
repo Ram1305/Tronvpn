@@ -9,6 +9,8 @@ import '../helpers/my_dialogs.dart';
 import '../helpers/pref.dart';
 import '../models/plan.dart';
 import '../models/subscription.dart';
+import '../screens/login_screen.dart';
+import '../screens/payment_success_screen.dart';
 import 'auth_controller.dart';
 
 /// Handles Razorpay checkout: create order → open checkout → verify → update pack.
@@ -16,6 +18,7 @@ import 'auth_controller.dart';
 class PaymentController extends GetxController {
   Razorpay? _razorpay;
   Plan? _pendingPlan;
+  bool _fromSignup = false;
 
   bool get isPaymentSupported =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
@@ -39,13 +42,15 @@ class PaymentController extends GetxController {
   }
 
   /// Start payment for [plan]: create order from backend, open Razorpay checkout.
-  Future<void> openCheckout(Plan plan) async {
+  /// When [fromSignup] is true: on success navigate to payment success screen then home; on failure navigate to login.
+  Future<void> openCheckout(Plan plan, {bool fromSignup = false}) async {
     if (!isPaymentSupported) {
       MyDialogs.error(msg: 'Payments are not supported on this device.');
       return;
     }
 
     _pendingPlan = plan;
+    _fromSignup = fromSignup;
     try {
       final order = await PaymentApi.createOrder(
         amount: plan.amount,
@@ -56,6 +61,10 @@ class PaymentController extends GetxController {
       if (order == null) {
         MyDialogs.error(msg: 'Could not create order');
         _pendingPlan = null;
+        if (_fromSignup) {
+          _fromSignup = false;
+          Get.offAll(() => const LoginScreen());
+        }
         return;
       }
 
@@ -72,6 +81,10 @@ class PaymentController extends GetxController {
     } catch (e) {
       _pendingPlan = null;
       MyDialogs.error(msg: e.toString().replaceFirst('Exception: ', ''));
+      if (_fromSignup) {
+        _fromSignup = false;
+        Get.offAll(() => const LoginScreen());
+      }
     }
   }
 
@@ -111,6 +124,10 @@ class PaymentController extends GetxController {
 
       if (result == null || !result.verified) {
         MyDialogs.error(msg: 'Payment verification failed');
+        if (_fromSignup) {
+          _fromSignup = false;
+          Get.offAll(() => const LoginScreen());
+        }
         return;
       }
 
@@ -134,10 +151,19 @@ class PaymentController extends GetxController {
             // Local pack already updated; backend activation failed
           }
         }
-        Get.back(); // leave premium screen
+        if (_fromSignup) {
+          _fromSignup = false;
+          Get.offAll(() => const PaymentSuccessScreen());
+        } else {
+          Get.back(); // leave premium screen
+        }
       }
     } catch (e) {
       MyDialogs.error(msg: e.toString().replaceFirst('Exception: ', ''));
+      if (_fromSignup) {
+        _fromSignup = false;
+        Get.offAll(() => const LoginScreen());
+      }
     }
   }
 
@@ -145,9 +171,17 @@ class PaymentController extends GetxController {
     _pendingPlan = null;
     final msg = response.message ?? 'Payment failed';
     if (response.code == Razorpay.PAYMENT_CANCELLED) {
+      if (_fromSignup) {
+        _fromSignup = false;
+        Get.offAll(() => const LoginScreen());
+      }
       return; // user cancelled, no need to show error
     }
     MyDialogs.error(msg: msg);
+    if (_fromSignup) {
+      _fromSignup = false;
+      Get.offAll(() => const LoginScreen());
+    }
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {

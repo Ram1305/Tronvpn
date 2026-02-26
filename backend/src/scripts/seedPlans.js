@@ -6,6 +6,8 @@ import connectDB from '../config/db.js';
 import Plan from '../models/plan.model.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// Load .env from backend folder (or project root)
+dotenv.config({ path: join(__dirname, '../../.env') });
 dotenv.config({ path: join(__dirname, '../../../.env') });
 
 const defaultPlans = [

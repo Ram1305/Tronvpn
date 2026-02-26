@@ -119,8 +119,8 @@ class _SignupScreenState extends State<SignupScreen> {
       if (!Get.isRegistered<PaymentController>()) {
         Get.put(PaymentController());
       }
-      Get.find<PaymentController>().openCheckout(_plan!);
-      Get.until((route) => route.isFirst);
+      // Navigate to payment: success → payment success screen then home; failure → login
+      Get.find<PaymentController>().openCheckout(_plan!, fromSignup: true);
     }
   }
 
