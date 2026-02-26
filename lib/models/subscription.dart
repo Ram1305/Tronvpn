@@ -42,6 +42,18 @@ extension PremiumPlanX on PremiumPlan {
     }
   }
 
+  /// Duration of the plan in days (for expiry countdown).
+  int get daysInPlan {
+    switch (interval) {
+      case PlanInterval.weekly:
+        return 7;
+      case PlanInterval.monthly:
+        return 30;
+      case PlanInterval.yearly:
+        return 365;
+    }
+  }
+
   /// Short title for list (e.g. "Weekly", "Monthly", "Yearly").
   String get intervalLabel {
     switch (interval) {
@@ -69,6 +81,27 @@ extension PremiumPlanX on PremiumPlan {
         return 10;
     }
   }
+
+  /// Amount in smallest unit for payment (paise for INR, cents for USD).
+  int get amountInSmallestUnit {
+    switch (this) {
+      case PremiumPlan.platinumWeekly:
+        return 499; // $4.99
+      case PremiumPlan.platinumMonthly:
+        return 999; // $9.99
+      case PremiumPlan.platinumYearly:
+        return 3999; // $39.99
+      case PremiumPlan.platinumPlusWeekly:
+        return 699; // $6.99
+      case PremiumPlan.platinumPlusMonthly:
+        return 1499; // $14.99
+      case PremiumPlan.platinumPlusYearly:
+        return 5999; // $59.99
+    }
+  }
+
+  /// Currency code for payment (e.g. INR, USD).
+  String get currencyCode => 'INR';
 
   /// Price string (e.g. "\$4.99").
   String get price {

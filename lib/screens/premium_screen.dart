@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../apis/payment_api.dart';
 import '../controllers/auth_controller.dart';
+import '../controllers/payment_controller.dart';
+import '../helpers/my_dialogs.dart';
 import '../helpers/pref.dart';
-import '../models/subscription.dart';
+import '../models/plan.dart';
 import '../theme/nexus_theme.dart';
 import '../widgets/canvas_background.dart';
 import 'login_screen.dart';
@@ -306,37 +309,50 @@ class PremiumScreen extends StatelessWidget {
     );
   }
 
-  void _showPlanSheet(BuildContext context) {
-    final isLoggedIn = Pref.isLoggedIn;
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => PlanSheet(
-        onSelect: (plan) {
-          Get.back(); // close sheet
-          if (isLoggedIn) {
-            Get.put(AuthController()).updatePack(plan).then((ok) {
-              if (ok) Get.back(); // leave premium screen
-            });
-          } else {
-            Get.to(() => SignupScreen(selectedPlan: plan));
-          }
-        },
-      ),
-    );
+  void _showPlanSheet(BuildContext context) async {
+    try {
+      final plans = await PaymentApi.getPlans();
+      if (!context.mounted) return;
+      final isLoggedIn = Pref.isLoggedIn;
+      showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (ctx) => PlanSheet(
+          plans: plans,
+          onSelect: (plan) {
+            Get.back(); // close sheet
+            if (isLoggedIn) {
+              if (!Get.isRegistered<PaymentController>()) {
+                Get.put(PaymentController());
+              }
+              Get.find<PaymentController>().openCheckout(plan);
+            } else {
+              Get.to(() => SignupScreen(selectedPlan: plan, plans: plans));
+            }
+          },
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        MyDialogs.error(msg: e.toString().replaceFirst('Exception: ', ''));
+      }
+    }
   }
 }
 
 /// Reusable plan picker (Platinum & Platinum+ with weekly/monthly/yearly). Used by PremiumScreen and SignupScreen.
+/// [plans] come from backend (GET /api/payments/plans).
 class PlanSheet extends StatefulWidget {
-  final void Function(PremiumPlan plan) onSelect;
-  final PremiumPlan initialSelected;
+  final List<Plan> plans;
+  final void Function(Plan plan) onSelect;
+  final Plan? initialSelected;
 
   const PlanSheet({
     super.key,
+    required this.plans,
     required this.onSelect,
-    this.initialSelected = PremiumPlan.platinumYearly,
+    this.initialSelected,
   });
 
   @override
@@ -344,24 +360,20 @@ class PlanSheet extends StatefulWidget {
 }
 
 class _PlanSheetState extends State<PlanSheet> {
-  late PremiumPlan _selected;
+  late Plan _selected;
+
+  List<Plan> get _platinumPlans =>
+      widget.plans.where((p) => p.isPlatinum).toList()..sort((a, b) => a.index.compareTo(b.index));
+  List<Plan> get _platinumPlusPlans =>
+      widget.plans.where((p) => p.isPlatinumPlus).toList()..sort((a, b) => a.index.compareTo(b.index));
 
   @override
   void initState() {
     super.initState();
-    _selected = widget.initialSelected;
+    _selected = widget.initialSelected ??
+        widget.plans.where((p) => p.interval == 'yearly').firstOrNull ??
+        widget.plans.first;
   }
-
-  static const _platinumPlans = [
-    PremiumPlan.platinumWeekly,
-    PremiumPlan.platinumMonthly,
-    PremiumPlan.platinumYearly,
-  ];
-  static const _platinumPlusPlans = [
-    PremiumPlan.platinumPlusWeekly,
-    PremiumPlan.platinumPlusMonthly,
-    PremiumPlan.platinumPlusYearly,
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -415,21 +427,24 @@ class _PlanSheetState extends State<PlanSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildTierSection(
-                    context,
-                    tierName: 'Platinum',
-                    subtitle: 'Full speed · 50+ locations · Ad-free',
-                    accentColor: NexusTheme.gold,
-                    plans: _platinumPlans,
-                  ),
-                  const SizedBox(height: 24),
-                  _buildTierSection(
-                    context,
-                    tierName: 'Platinum +',
-                    subtitle: 'More devices · Priority support · 80+ locations',
-                    accentColor: NexusTheme.purple,
-                    plans: _platinumPlusPlans,
-                  ),
+                  if (_platinumPlans.isNotEmpty)
+                    _buildTierSection(
+                      context,
+                      tierName: 'Platinum',
+                      subtitle: 'Full speed · 50+ locations · Ad-free',
+                      accentColor: NexusTheme.gold,
+                      plans: _platinumPlans,
+                    ),
+                  if (_platinumPlans.isNotEmpty && _platinumPlusPlans.isNotEmpty)
+                    const SizedBox(height: 24),
+                  if (_platinumPlusPlans.isNotEmpty)
+                    _buildTierSection(
+                      context,
+                      tierName: 'Platinum +',
+                      subtitle: 'More devices · Priority support · 80+ locations',
+                      accentColor: NexusTheme.purple,
+                      plans: _platinumPlusPlans,
+                    ),
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
@@ -478,7 +493,7 @@ class _PlanSheetState extends State<PlanSheet> {
     required String tierName,
     required String subtitle,
     required Color accentColor,
-    required List<PremiumPlan> plans,
+    required List<Plan> plans,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -517,8 +532,8 @@ class _PlanSheetState extends State<PlanSheet> {
     );
   }
 
-  Widget _buildPlanTile(BuildContext context, PremiumPlan plan, Color tierColor) {
-    final isSelected = _selected == plan;
+  Widget _buildPlanTile(BuildContext context, Plan plan, Color tierColor) {
+    final isSelected = _selected.index == plan.index;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
@@ -577,7 +592,7 @@ class _PlanSheetState extends State<PlanSheet> {
                               color: NexusTheme.text,
                             ),
                           ),
-                          if (plan.badge != null) ...[
+                          if (plan.badge != null && plan.badge!.isNotEmpty) ...[
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

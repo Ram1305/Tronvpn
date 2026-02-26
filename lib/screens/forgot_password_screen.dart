@@ -35,12 +35,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Future<void> _sendOtp() async {
-    final ok = await _auth.sendOtp(_email.text);
+    final ok = await _auth.sendOtp(_email.text, 'forgot_password');
     if (ok) setState(() => _otpSent = true);
   }
 
-  void _verifyOtp() {
-    if (_auth.verifyOtp(_otp.text)) setState(() => _otpVerified = true);
+  Future<void> _verifyOtp() async {
+    final ok = await _auth.verifyOtp(_email.text, _otp.text, 'forgot_password');
+    if (ok) setState(() => _otpVerified = true);
   }
 
   Future<void> _changePassword() async {

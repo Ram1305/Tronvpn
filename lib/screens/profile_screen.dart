@@ -108,6 +108,22 @@ class ProfileScreen extends StatelessWidget {
           ? Subscription(plan: currentActivePlan, date: DateTime.now()).planLabel
           : null;
 
+      // Effective expiry: from API or computed from last subscription (local)
+      DateTime? effectiveExpiresAt = currentUser.subscriptionExpiresAt;
+      if (effectiveExpiresAt == null &&
+          subscriptionHistory.isNotEmpty &&
+          currentActivePlan != null) {
+        final last = subscriptionHistory.last;
+        effectiveExpiresAt =
+            last.date.add(Duration(days: last.plan.daysInPlan));
+      }
+      final now = DateTime.now();
+      final isExpired = effectiveExpiresAt != null &&
+          effectiveExpiresAt.isBefore(now);
+      final int? daysLeft = effectiveExpiresAt != null && !isExpired
+          ? effectiveExpiresAt.difference(now).inDays
+          : null;
+
       return Scaffold(
         backgroundColor: NexusTheme.bg,
         body: Stack(
@@ -153,16 +169,23 @@ class ProfileScreen extends StatelessWidget {
                           const SizedBox(height: 28),
                           _buildSectionTitle('Plan'),
                           const SizedBox(height: 12),
-                          if (currentPlanLabel != null)
+                          if (isExpired) ...[
+                            _buildExpiredCard(context),
+                            const SizedBox(height: 10),
+                          ],
+                          if (currentPlanLabel != null && !isExpired)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 10),
                               child: _buildDetailCard(
                                 Icons.workspace_premium_rounded,
                                 'Current plan',
-                                currentPlanLabel,
+                                daysLeft != null
+                                    ? '$currentPlanLabel · $daysLeft days left'
+                                    : currentPlanLabel,
                               ),
                             ),
-                          _buildUpgradePlanCard(context),
+                          if (!isExpired) _buildUpgradePlanCard(context),
+                          if (isExpired) _buildRenewButton(context),
                           const SizedBox(height: 28),
                           _buildSectionTitle('Subscription plan history'),
                           const SizedBox(height: 12),
@@ -356,6 +379,87 @@ class ProfileScreen extends StatelessWidget {
             ),
             Icon(Icons.arrow_forward_ios_rounded, size: 14, color: NexusTheme.text3),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpiredCard(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: NexusTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: NexusTheme.red.withOpacity(0.5)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: NexusTheme.red.withOpacity(0.15),
+            ),
+            child: const Icon(Icons.event_busy_rounded, size: 20, color: NexusTheme.red),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your subscription expired. Renew now.',
+                  style: GoogleFonts.outfit(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: NexusTheme.text,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Choose a plan to continue using premium features',
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    color: NexusTheme.text2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRenewButton(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: SizedBox(
+        width: double.infinity,
+        height: 52,
+        child: ElevatedButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => const PremiumScreen(),
+              ),
+            );
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: NexusTheme.teal,
+            foregroundColor: Colors.black87,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          child: Text(
+            'Renew subscription',
+            style: GoogleFonts.outfit(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ),
     );

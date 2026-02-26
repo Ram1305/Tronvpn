@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../apis/payment_api.dart';
 import '../controllers/auth_controller.dart';
+import '../controllers/payment_controller.dart';
+import '../helpers/my_dialogs.dart';
+import '../models/plan.dart';
 import '../models/subscription.dart';
 import '../theme/nexus_theme.dart';
 import '../widgets/canvas_background.dart';
@@ -10,16 +14,18 @@ import 'login_screen.dart';
 import 'premium_screen.dart';
 
 class SignupScreen extends StatefulWidget {
-  final PremiumPlan selectedPlan;
+  final Plan? selectedPlan;
+  final List<Plan>? plans;
 
-  const SignupScreen({super.key, this.selectedPlan = PremiumPlan.platinumYearly});
+  const SignupScreen({super.key, this.selectedPlan, this.plans});
 
   @override
   State<SignupScreen> createState() => _SignupScreenState();
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  PremiumPlan _plan = PremiumPlan.platinumYearly;
+  Plan? _plan;
+  List<Plan>? _plans;
   final _auth = Get.put(AuthController());
 
   final _username = TextEditingController();
@@ -37,6 +43,10 @@ class _SignupScreenState extends State<SignupScreen> {
   void initState() {
     super.initState();
     _plan = widget.selectedPlan;
+    _plans = widget.plans;
+    if (_plan == null && _plans != null && _plans!.isNotEmpty) {
+      _plan = _plans!.where((p) => p.interval == 'yearly').firstOrNull ?? _plans!.first;
+    }
   }
 
   @override
@@ -50,12 +60,24 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
-  void _changePlan() {
+  void _changePlan() async {
+    List<Plan> plans = _plans ?? [];
+    if (plans.isEmpty) {
+      try {
+        plans = await PaymentApi.getPlans();
+        if (mounted) setState(() => _plans = plans);
+      } catch (e) {
+        if (mounted) MyDialogs.error(msg: e.toString().replaceFirst('Exception: ', ''));
+        return;
+      }
+    }
+    if (!mounted || plans.isEmpty) return;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => PlanSheet(
+        plans: plans,
         initialSelected: _plan,
         onSelect: (plan) {
           setState(() => _plan = plan);
@@ -70,13 +92,19 @@ class _SignupScreenState extends State<SignupScreen> {
     if (ok) setState(() => _otpSent = true);
   }
 
-  void _verifyOtp() {
-    if (_auth.verifyOtp(_otp.text)) setState(() => _otpVerified = true);
+  Future<void> _verifyOtp() async {
+    final ok = await _auth.verifyOtp(_email.text, _otp.text, 'signup');
+    if (ok) setState(() => _otpVerified = true);
   }
 
   Future<void> _signUp() async {
     if (_loading) return;
+    if (_plan == null) {
+      MyDialogs.error(msg: 'Please select a plan first');
+      return;
+    }
     setState(() => _loading = true);
+    final premiumPlan = PremiumPlan.values[_plan!.index.clamp(0, PremiumPlan.values.length - 1)];
     final ok = await _auth.signUp(
       username: _username.text,
       email: _email.text,
@@ -84,10 +112,14 @@ class _SignupScreenState extends State<SignupScreen> {
       password: _password.text,
       confirmPassword: _confirmPassword.text,
       otpVerified: _otpVerified,
-      selectedPlan: _plan,
+      selectedPlan: premiumPlan,
     );
     setState(() => _loading = false);
     if (ok) {
+      if (!Get.isRegistered<PaymentController>()) {
+        Get.put(PaymentController());
+      }
+      Get.find<PaymentController>().openCheckout(_plan!);
       Get.until((route) => route.isFirst);
     }
   }
@@ -117,7 +149,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const SizedBox(height: 16),
-                        _buildPlanCard(_plan),
+                        _buildPlanCard(_plan, _plans),
                         const SizedBox(height: 24),
                         _buildTextField(
                           controller: _username,
@@ -194,9 +226,8 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
-  Widget _buildPlanCard(PremiumPlan plan) {
-    final isPlatinumPlus = plan.tier == PremiumTier.platinumPlus;
-    final accent = isPlatinumPlus ? NexusTheme.purple : NexusTheme.gold;
+  Widget _buildPlanCard(Plan? plan, List<Plan>? plans) {
+    final accent = plan?.isPlatinumPlus == true ? NexusTheme.purple : NexusTheme.gold;
     return InkWell(
       onTap: _changePlan,
       borderRadius: BorderRadius.circular(16),
@@ -214,7 +245,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    plan.planLabel,
+                    plan?.displayName ?? 'Choose your plan',
                     style: GoogleFonts.outfit(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -223,7 +254,9 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${plan.price} ${plan.period} · ${plan.description}',
+                    plan != null
+                        ? '${plan.price} ${plan.period} · ${plan.description}'
+                        : 'Tap to select a plan',
                     style: GoogleFonts.outfit(
                       fontSize: 12,
                       color: NexusTheme.text2,
